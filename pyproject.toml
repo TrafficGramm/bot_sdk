@@ -1,0 +1,18 @@
+[project]
+name = "trafficgram_bot_sdk"
+version = "0.1.0"
+description = "SDK для показа рекламы и подписок в aiogram-ботах"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiogram>=3.20.0.post0",
+    "asyncio>=3.4.3",
+    "fastapi>=0.115.13",
+    "jinja2>=3.1.6",
+    "pre-commit>=4.2.0",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.0.0",
+    "python-dotenv>=1.1.0",
+    "uvicorn>=0.34.3",
+]
+
