@@ -29,37 +29,32 @@ class AdH(BaseModel):
 # Унифицированная модель
 Ad = Union[AdBase, AdH]
 
-H =  [{
-            "type": "H",
-            "text": "🎉 Добро пожаловать в IUDA BOT!",
-            "media_type": "photo", # Может быть фото, видео, документ, гиф, альбом
-            "media": [
-                "https://ibb.co/HfZWZxF9",
-                "https://ibb.co/HfZWZxF9"
-            ],
-            "buttons": [
-                { "text": "🔓 Перейти", "url": "https://example.com/bonus" }
-            ]
-        }]
+H = [
+    {
+        "type": "H",
+        "text": "🎉 Добро пожаловать в IUDA BOT!",
+        "media_type": "photo",  # Может быть фото, видео, документ, гиф, альбом
+        "media": ["https://ibb.co/HfZWZxF9", "https://ibb.co/HfZWZxF9"],
+        "buttons": [{"text": "🔓 Перейти", "url": "https://example.com/bonus"}],
+    }
+]
 
 OS_NS = [
-        {
-            "type": "NS",
-            "channels": {
-                "IUDA LAB": "https://t.me/iudalab",
-                "Crypto Chat": "https://t.me/cryptochat"
-            }
+    {
+        "type": "NS",
+        "channels": {
+            "IUDA LAB": "https://t.me/iudalab",
+            "Crypto Chat": "https://t.me/cryptochat",
         },
-        {
-            "type": "OS",
-            "channels": {
-                "AI News": "https://t.me/ainews"
-            }
-        }
-    ]
+    },
+    {"type": "OS", "channels": {"AI News": "https://t.me/ainews"}},
+]
+
 
 @app.get("/channels", response_model=List[Ad])
-async def fetch_channels(user_id: int = Query(..., description="ID пользователя")) -> List[Ad]:
+async def fetch_channels(
+    user_id: int = Query(..., description="ID пользователя"),
+) -> List[Ad]:
     return random.choice([H, OS_NS])
 
 
@@ -79,4 +74,4 @@ async def is_subscribed(data: SubscriptionRequest):
         result = data.user_id % 2 == 0
     else:
         result = False
-    return {"subscribed": True}
+    return {"subscribed": result}
