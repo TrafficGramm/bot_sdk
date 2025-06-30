@@ -1,7 +1,7 @@
 from typing import Literal
 import aiohttp
 
-from sdk.types import FullUserData, BotEventPayload
+from .types import FullUserData, BotEventPayload
 
 
 class LoggingService:

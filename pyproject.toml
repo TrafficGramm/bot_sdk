@@ -1,8 +1,12 @@
 [project]
 name = "trafficgram_bot_sdk"
-version = "0.1.0"
-description = "SDK для показа рекламы и подписок в aiogram-ботах"
+version = "0.1.1"
+description = "Trafficgram SDK"
 readme = "README.md"
+license = {text = "MIT"}
+authors = [
+  {name = "trafficgram", email = "targetgram.ai@proton.me"}
+]
 requires-python = ">=3.10"
 dependencies = [
     "aiogram>=3.20.0.post0",
@@ -17,3 +21,9 @@ dependencies = [
     "uvicorn>=0.34.3",
 ]
 
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["trafficgram_bot_sdk"]

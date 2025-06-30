@@ -31,7 +31,14 @@ SDK автоматически работает с тремя типами ре�
 
 ## 🔧 Быстрый старт
 
-### 1. Подключение SDK в боте
+### 1. Установка SDK
+
+```zsh
+pip install trafficgram-bot-sdk
+```
+
+
+### 2. Подключение SDK в боте
 
 ```python
 from config import BOT_TOKEN
@@ -39,7 +46,7 @@ from aiogram import Bot, Dispatcher, Router, types, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from sdk import SubscriptionMiddleware
+from trafficgram_bot_sdk import SubscriptionMiddleware
 
 # Базовая настройка бота
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -62,7 +69,7 @@ middleware.register_check_subscription_handler(dp)
 
 ---
 
-### 2. Добавление обычных обработчиков
+### 3. Добавление обычных обработчиков
 
 ```python
 router_main = Router()
@@ -83,7 +90,7 @@ dp.include_router(router_main)
 
 ---
 
-### 3. Запуск бота
+### 4. Запуск бота
 
 ```python
 async def main():

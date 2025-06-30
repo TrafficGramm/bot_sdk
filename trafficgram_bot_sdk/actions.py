@@ -10,42 +10,32 @@ from aiogram.types import (
 import aiohttp
 import time
 import datetime
-from sdk.ads import AdService
-from sdk.main import SubscriptionMiddleware
-from sdk.types import FullUserData
+from .ads import AdService
+from .main import SubscriptionMiddleware
+from .types import FullUserData, Ad
 
 
-# FIXME: Refactor API proccesing
 def check_subscription_handler(
     dp: Dispatcher, ad_service: AdService, middleware: SubscriptionMiddleware
 ):
     @dp.callback_query(F.data == "check_subscription")
     async def check_subscription_handler(call: CallbackQuery):  # type: ignore[reportUnusedFunction]
-        print("[INFO] Обработчик для check_subscription активирован.")
         await call.answer("Проверяем подписку...")
-        user_id = call.from_user.id
+        user = call.from_user
+        user_id = user.id
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "http://127.0.0.1:8000/channels", params={"user_id": user_id}
-                ) as resp:
-                    ads = await resp.json()
-                    if not ads:
-                        raise ValueError("Не удалось получить данные о каналах.")
-        except Exception as e:
-            await call.answer(f"Ошибка при получении данных: {e}", show_alert=True)
-            return
-
-        ns_channels, os_channels = await ad_service.get_channels(ads)
-        all_channels: dict[str, str] = {**ns_channels, **os_channels}
+        all_channels = middleware.pending_channels.get(user_id)
+        if not all_channels:
+            ads: list[Ad] = await ad_service.fetch_ad(user_id)
+            ns_channels, os_channels = await ad_service.get_channels(ads)
+            all_channels = {**ns_channels, **os_channels}
+            middleware.pending_channels[user_id] = all_channels
 
         not_subscribed: list[tuple[str, str]] = []
-        for name, url in list(ns_channels.items())[:5]:
+        for name, url in list(all_channels.items())[:5]:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    "http://127.0.0.1:8000/is_subscribed",
-                    json={"user_id": user_id, "channel_url": url},
+                    middleware.CHECK_API_URL, json={"user_id": user_id, "channel": url}
                 ) as resp:
                     result = await resp.json()
                     if not result.get("subscribed", False):
@@ -83,19 +73,22 @@ def check_subscription_handler(
                 )
                 await call.answer("Подписка подтверждена!")
 
-                # --- отправка bot_ad_goal ---
+                # Удаляем кэш
+                middleware.pending_channels.pop(user_id, None)
+
+                # Отправка ad_goal
                 full_user_data: FullUserData = {
-                    "id": call.from_user.id,
-                    "is_bot": call.from_user.is_bot,
-                    "is_premium": getattr(call.from_user, "is_premium", False),
-                    "language_code": call.from_user.language_code or "",
-                    "first_name": call.from_user.first_name,
-                    "last_name": call.from_user.last_name,
-                    "username": call.from_user.username,
+                    "id": user.id,
+                    "is_bot": user.is_bot,
+                    "is_premium": getattr(user, "is_premium", False),
+                    "language_code": user.language_code or "",
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "username": user.username,
                 }
 
                 ad_goal_payload: dict[str, str | FullUserData] = {
-                    "telegram_user_id": str(call.from_user.id),
+                    "telegram_user_id": str(user_id),
                     "full_user_data": full_user_data,
                 }
 
@@ -107,7 +100,7 @@ def check_subscription_handler(
                 try:
                     async with aiohttp.ClientSession() as session:
                         async with session.post(
-                            "https://core-backsdk.infra.trafficgram.online/bot_ad_goal",
+                            middleware.AD_GOAL_API_URL,
                             json=ad_goal_payload,
                             headers=headers,
                         ) as resp:
@@ -118,7 +111,7 @@ def check_subscription_handler(
                 except Exception as e:
                     print(f"[ERROR] ad_goal exception: {e}")
 
-                # --- генерация /start для старта сценария ---
+                # Генерация поддельного /start
                 middleware.user_ad_shown[user_id] = True
                 start_param = (
                     str(call.data).split("?")[1] if "?" in str(call.data) else None

@@ -9,7 +9,7 @@ from aiogram.types import (
     Message,
 )
 
-from sdk.types import Ad, AdH, AdOS, AdNS, FullUserData, ServePayload
+from .types import Ad, AdH, AdOS, AdNS, FullUserData, ServePayload, Button
 
 
 class AdService:
@@ -21,25 +21,67 @@ class AdService:
     @staticmethod
     def normalize_ads(raw_ads: list[dict[str, Any]]) -> list[Ad]:
         ads: list[Ad] = []
+
         for ad in raw_ads:
             ad_type = ad.get("format")
+            chosen_ad_type = ad.get("chosen_ad_type")
+
             if ad_type == "H":
+                # Сохраняем все типы и ссылки на медиа
+                media_urls: list[str] = []
+                media_types: list[str] = []
+
+                for media in ad.get("media", []):
+                    url = media.get("url")
+                    m_type = media.get("type")
+                    if url and m_type:
+                        media_urls.append(url)
+                        media_types.append(m_type)
+
+                # Кнопки — берём redirect если chosen_ad_type == "clicks"
+                buttons: list[Button] = []
+                for btn in ad.get("tg_buttons", []):
+                    url_field = (
+                        btn.get("redirect")
+                        if chosen_ad_type == "clicks"
+                        else btn.get("url")
+                    )
+                    if btn.get("text") and url_field:
+                        buttons.append({"text": btn["text"], "url": url_field})
+
                 ads.append(
                     AdH(
                         type="H",
                         text=ad.get("tg_text", ""),
-                        media_type=ad["media"][0]["type"] if ad.get("media") else "",
-                        media=ad["media"][0]["url"] if ad.get("media") else "",
-                        buttons=[
-                            {"text": b["text"], "url": b["url"]}
-                            for b in ad.get("tg_buttons", [])
-                        ],
+                        media_type=media_types[0],
+                        media=media_urls,
+                        buttons=buttons,
                     )
                 )
+
             elif ad_type == "NS":
-                ads.append(AdNS(type="NS", channels=ad.get("channels", {})))
+                channels = ad.get("channels")
+                if not channels and ad.get("tg_buttons"):
+                    channels = {
+                        btn["text"]: btn["redirect"]
+                        if ad.get("chosen_ad_type") == "clicks"
+                        else btn["url"]
+                        for btn in ad["tg_buttons"]
+                        if btn.get("text") and (btn.get("redirect") or btn.get("url"))
+                    }
+                ads.append(AdNS(type="NS", channels=channels or {}))
+
             elif ad_type == "OS":
-                ads.append(AdOS(type="OS", channels=ad.get("channels", {})))
+                channels = ad.get("channels")
+                if not channels and ad.get("tg_buttons"):
+                    channels = {
+                        btn["text"]: btn["redirect"]
+                        if ad.get("chosen_ad_type") == "clicks"
+                        else btn["url"]
+                        for btn in ad["tg_buttons"]
+                        if btn.get("text") and (btn.get("redirect") or btn.get("url"))
+                    }
+                ads.append(AdOS(type="OS", channels=channels or {}))
         return ads
 
     async def fetch_ad(
@@ -71,7 +113,6 @@ class AdService:
     async def is_user_subscribed(self, user_id: int, channel_url: str) -> bool:
         async with aiohttp.ClientSession() as session:
             try:
-                print(self.check_api_url)
                 async with session.post(
                     self.check_api_url,
                     json={"user_id": user_id, "channel_url": channel_url},
@@ -88,7 +129,7 @@ class AdService:
             [media_raw] if isinstance(media_raw, str) else media_raw or []
         )
 
-        media_type = ad.get("media_type", "photo")
+        media_type = ad.get("media_type", "photo").lower()
         text = ad.get("text", "")
         buttons = ad.get("buttons", [])
 
@@ -101,33 +142,40 @@ class AdService:
                 ]
             )
 
-        # FIXME: Fix problem with sending media and text in difference msg
-        media_files: list[MediaUnion] = []
-        if media:
-            for url in media:
-                if media_type == "photo":
-                    media_files.append(InputMediaPhoto(media=url))
-                elif media_type == "video":
-                    media_files.append(InputMediaVideo(media=url))
-                # FIXME: Cant send GIF and Document
-                # elif media_type == "document":
-                #    media_files.append(InputMediaDocument(media=url))
-                # elif media_type == "gif":
-                #    media_files.append(InputMediaAnimation(media=url))
+        try:
+            if event.bot and media:
+                if media_type in ("photo", "video"):
+                    media_files: list[MediaUnion] = []
+                    for url in media:
+                        if media_type == "photo":
+                            media_files.append(InputMediaPhoto(media=url))
+                        elif media_type == "video":
+                            media_files.append(InputMediaVideo(media=url))
+
+                    if media_files:
+                        await event.bot.send_media_group(
+                            chat_id=event.chat.id, media=media_files
+                        )
+
+                elif media_type == "document":
+                    await event.bot.send_document(
+                        chat_id=event.chat.id, document=media[0]
+                    )
+
+                elif media_type in ("gif", "animation"):
+                    await event.bot.send_animation(
+                        chat_id=event.chat.id, animation=media[0]
+                    )
+
                 else:
                     print(f"[INFO] Неизвестный тип медиа: {media_type}")
 
-        try:
-            if media_files:
-                if event.bot:
-                    await event.bot.send_media_group(
-                        chat_id=event.chat.id, media=media_files
-                    )
-
+            # Отправка текста и кнопок
             if text and isinstance(text, str):
                 await event.answer(text, reply_markup=kb)
             elif kb:
                 await event.answer(" ", reply_markup=kb)
+
         except Exception as e:
             print(f"[media error]: {e}")
 

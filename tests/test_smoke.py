@@ -1,6 +1,6 @@
 import pytest
-from sdk.main import SubscriptionMiddleware
-from sdk.ads import AdService
+from trafficgram_bot_sdk.main import SubscriptionMiddleware
+from trafficgram_bot_sdk.ads import AdService
 from tests.utils import make_fake_message
 from unittest.mock import AsyncMock, patch
 
@@ -8,12 +8,9 @@ from unittest.mock import AsyncMock, patch
 @pytest.mark.asyncio
 async def test_middleware_launches_without_errors():
     # Подставим одну NS-рекламу
-    ad_payload: list[dict[str, str | list[str | dict[str, str]] | dict[str, str]]] = [{
-        "type": "NS",
-        "channels": {
-            "Some Channel": "https://t.me/somechannel"
-        }
-    }]
+    ad_payload: list[dict[str, str | list[str | dict[str, str]] | dict[str, str]]] = [
+        {"type": "NS", "channels": {"Some Channel": "https://t.me/somechannel"}}
+    ]
 
     mock_ad_service = AsyncMock(spec=AdService)
     mock_ad_service.fetch_ad.return_value = ad_payload

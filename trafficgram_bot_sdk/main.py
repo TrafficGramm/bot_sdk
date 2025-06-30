@@ -1,24 +1,25 @@
 from typing import Dict, Any, Callable, Awaitable, Optional
 from aiogram import Dispatcher
 from aiogram.types import Message, CallbackQuery, Update
-from sdk.ads import AdService
-from sdk.logging_utils import LoggingService
-from sdk.utils import get_channels_keyboard
+from .ads import AdService
+from .logging_utils import LoggingService
+from .utils import get_channels_keyboard
+from .types import Ad, FullUserData
+
 import datetime
 import time
-
-from sdk.types import Ad, FullUserData
 
 CHECK_BUTTON_TEXT = "🔄 Проверить подписку"
 
 
 class SubscriptionMiddleware:
-    BASE_API_URL = "http://127.0.0.1:8000"
-    CHECKER_API_URL = "http://127.0.0.1:8000"
+    BASE_API_URL = "https://core-backsdk.infra.trafficgram.online"
+    CHECKER_API_URL = "http://127.0.0.1:8080"
 
-    CHANNELS_API_URL = f"{BASE_API_URL}/channels"
-    CHECK_API_URL = f"{CHECKER_API_URL}/is_subscribed"
-    LOG_API_URL = f"{BASE_API_URL}/user_action"
+    CHANNELS_API_URL = f"{BASE_API_URL}/bot_serve"
+    CHECK_API_URL = f"{CHECKER_API_URL}/check-subscription"
+    LOG_API_URL = f"{BASE_API_URL}/bot_events"
+    AD_GOAL_API_URL = f"{BASE_API_URL}/bot_ad_goal"
 
     def __init__(
         self,
@@ -40,6 +41,7 @@ class SubscriptionMiddleware:
         )
         self.max_channels = max_channels
         self.user_ad_shown: Dict[int, bool] = {}
+        self.pending_channels: Dict[int, Dict[str, str]] = {}
         self.log_all = True
 
     async def __call__(
@@ -50,15 +52,13 @@ class SubscriptionMiddleware:
     ) -> Any:
         user = None
         if isinstance(event, Message):
-            if event.from_user:
-                user = event.from_user
-                user_id = event.from_user.id
-            else:
-                user_id = 0
+            user = event.from_user
+            user_id = user.id if user else 0
             event_type = "message"
             content = event.text
         elif isinstance(event, CallbackQuery):
-            user_id = event.from_user.id
+            user = event.from_user
+            user_id = user.id
             event_type = "callback_query"
             content = event.data
         else:
@@ -77,17 +77,18 @@ class SubscriptionMiddleware:
         else:
             full_user_data: FullUserData = {}
 
-        await self.log_service.send_action_log(
-            user_id,
-            full_user_data=full_user_data,
-            event_type=event_type,
-            details={
-                "text": str(content),
-                "event_id": str(
-                    getattr(event, "message_id", None) or getattr(event, "id", None)
-                ),
-            },
-        )
+        if self.log_all:
+            await self.log_service.send_action_log(
+                user_id,
+                full_user_data=full_user_data,
+                event_type=event_type,
+                details={
+                    "text": str(content),
+                    "event_id": str(
+                        getattr(event, "message_id", None) or getattr(event, "id", None)
+                    ),
+                },
+            )
 
         if (
             isinstance(event, Message)
@@ -99,6 +100,22 @@ class SubscriptionMiddleware:
                 return await handler(event, data)
 
             start_param = event.text.split("?", 1)[1] if "?" in event.text else None
+
+            if user_id in self.pending_channels:
+                all_channels = self.pending_channels[user_id]
+                if all_channels:
+                    kb = get_channels_keyboard(all_channels, self.max_channels)
+                    text = (
+                        self.not_subscribed_message
+                        + "\n\n"
+                        + "\n".join(
+                            f"• <a href='{url}'>{name}</a>"
+                            for name, url in all_channels.items()
+                        )
+                    )
+                    await event.answer(text, reply_markup=kb, parse_mode="HTML")
+                    return
+
             ads: list[Ad] = await self.ad_service.fetch_ad(
                 user_id, full_user_data=full_user_data
             )
@@ -107,6 +124,7 @@ class SubscriptionMiddleware:
                 if ad.get("type") == "H":
                     await self.ad_service.handle_h_ad(event, ad)
                     self.user_ad_shown[user_id] = True
+
                     fake_message = Message(
                         message_id=event.message_id,
                         date=datetime.datetime.now(datetime.timezone.utc),
@@ -126,6 +144,9 @@ class SubscriptionMiddleware:
                 ns_channels, os_channels = await self.ad_service.get_channels(ads)
                 all_channels = {**ns_channels, **os_channels}
 
+                if ns_channels:
+                    self.pending_channels[user_id] = ns_channels
+
                 if all_channels:
                     kb = get_channels_keyboard(all_channels, self.max_channels)
                     text = (
@@ -142,6 +163,6 @@ class SubscriptionMiddleware:
         return await handler(event, data)
 
     def register_check_subscription_handler(self, dp: Dispatcher):
-        from sdk.actions import check_subscription_handler
+        from .actions import check_subscription_handler
 
         check_subscription_handler(dp, self.ad_service, self)
